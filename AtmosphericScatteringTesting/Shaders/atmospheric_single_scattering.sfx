@@ -6,6 +6,7 @@
 #include "atmospheric_testing.sl"
 
 uniform Texture2D	g_Transmittance : register(t0);
+uniform RWTexture3D<vec4> singleScatteringOutput SIMUL_RWTEXTURE_REGISTER(0);
 
 vec3 GetTransmittanceToTopAtmosphereBoundary(float r, float mu) {
     //assert(r >= atmosphere.bottom_radius && r <= g_topRadius);
@@ -45,11 +46,47 @@ vec3 GetTransmittanceToSun(float r, float mu_s) {
 
 shader vec4 PS_PrecomputeSingleScattering(posTexVertexOutput IN) : SV_TARGET
 {
-	vec2 coords = GetRMuFromTransmittanceTextureUv(IN.texCoords);
+    //vec2 coords = GetRMuFromTransmittanceTextureUv(IN.texCoords);
 
-    vec3 transmittance = GetTransmittanceToSun(coords.x, coords.y);// GetTransmittance(coords.x, coords.y, 6360000.0, false);
+    float frag_coord_nu =  floor(IN.texCoords.x / float(32));//
+    float frag_coord_mu_s =  fmod(IN.texCoords.x, float(32));
 
-	return vec4(transmittance,0.0);
+    vec4 coords = GetRMuMuSNuFromScatteringTextureUvwz(vec4(frag_coord_nu, frag_coord_mu_s, IN.texCoords.y, g_mu_s));
+
+
+    bool ray_r_mu_intersects_ground = (coords.x > 0);
+
+    float r = abs(coords.x);
+    float mu = coords.y;
+    //float d = 1000.f;
+    float mu_s = coords.z;
+    float nu = coords.w;// (IN.texCoords.x * 2.0) - 1.0;
+    nu = clamp(nu, mu * mu_s - sqrt((1.0 - mu * mu) * (1.0 - mu_s * mu_s)), mu * mu_s + sqrt((1.0 - mu * mu) * (1.0 - mu_s * mu_s)));
+
+    const int SAMPLE_COUNT = 50;
+    float dx = DistanceToNearestAtmosphereBoundary(r, mu, ray_r_mu_intersects_ground) / float(SAMPLE_COUNT);
+
+    vec3 rayleigh_sum = 0;
+    vec3 mie_sum = 0;
+    vec3 transmittance = 0;
+
+    for (int i = 0; i <= SAMPLE_COUNT; ++i) {
+        float d_i = float(i) * dx;
+
+        float r_d = ClampRadius(sqrt(d_i * d_i + 2.0 * r * mu * d_i + r * r));
+        float mu_s_d = ClampCosine((r* mu_s + d_i * nu) / r_d);
+
+        transmittance = GetTransmittance(r, mu, d_i, ray_r_mu_intersects_ground) * GetTransmittanceToSun(r_d, mu_s_d);
+        float weight_i = (i == 0 || i == SAMPLE_COUNT) ? 0.5 : 1.0;
+        rayleigh_sum += transmittance * GetLayerDensity(g_rayleighExpTerm, g_rayleighExpScale, g_rayleighLinearTerm, g_rayleighConstantTerm, r_d - g_bottomRadius) * weight_i;
+        mie_sum += transmittance * GetLayerDensity(g_mieExpTerm, g_mieExpScale, g_mieLinearTerm, g_mieConstantTerm, r_d - g_bottomRadius) * weight_i;
+    }
+
+    vec3 rayleigh = rayleigh_sum * dx * g_solarIrradiance * g_rayleighScattering;
+    vec3 mie = mie_sum * dx * g_solarIrradiance * g_mieScattering;
+    //return vec4(0.0, mu_s, 0.0, nu);
+    //return vec4(transmittance, 0.0);
+    return (vec4(rayleigh, 0.0));
 }
 
 

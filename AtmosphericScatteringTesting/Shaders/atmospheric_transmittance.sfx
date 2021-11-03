@@ -7,81 +7,9 @@
 
 uniform Texture2D	g_Transmittance :	register(t0);
 
-float GetLayerDensity(float exp_term, float exp_scale, float linear_term, float constant_term, float altitude)
-{
-	float density = exp_term * exp(exp_scale * altitude) + linear_term * altitude + constant_term;
-	return clamp(density, 0.f, 1.f);
-}
-
-
-float DistanceToTopAtmosphereBoundary(float r, float mu) {
-	//assert(r <= g_topRadius);
-	//assert(mu >= -1.0 && mu <= 1.0);
-
-	float discriminant = r * r * (mu * mu - 1.0) + (g_topRadius * g_topRadius);
-	return ClampDistance(-r * mu + sqrt(discriminant));
-}
-
-float DistanceToBottomAtmosphereBoundary(float r, float mu) {
-	//assert(r >= atmosphere.bottom_radius);
-	//assert(mu >= -1.0 && mu <= 1.0);
-	float discriminant = r * r * (mu * mu - 1.0) + (g_bottomRadius * g_bottomRadius);
-	return ClampDistance(-r * mu - sqrt(discriminant));
-}
-
-float DistanceToNearestAtmosphereBoundary(float r, float mu, bool ray_r_mu_intersects_ground) {
-	if (ray_r_mu_intersects_ground) {
-		return DistanceToBottomAtmosphereBoundary(r, mu);
-	}
-	else {
-		return DistanceToTopAtmosphereBoundary(r, mu);
-	}
-}
 
 
 
-vec2 GetRMuFromTransmittanceTextureUv(vec2 uv) {
-	//assert(uv.x >= 0.0 && uv.x <= 1.0);
-	//assert(uv.y >= 0.0 && uv.y <= 1.0);
-	float r, mu;
-
-	float x_r = GetUnitRangeFromTextureCoord(uv.y, 256);
-	float x_mu = GetUnitRangeFromTextureCoord(uv.x, 256);
-	// Distance to top atmosphere boundary for a horizontal ray at ground level.
-	float H = sqrt(g_topRadius * g_topRadius - g_bottomRadius * g_bottomRadius);
-	// Distance to the horizon, from which we can compute r:
-	float rho = H * x_r;
-	r = sqrt(rho * rho + g_bottomRadius * g_bottomRadius);// (x_r * (g_topRadius - g_bottomRadius)) + g_bottomRadius;//
-	// Distance to the top atmosphere boundary for the ray (r,mu), and its minimum
-	// and maximum values over all mu - obtained for (r,1) and (r,mu_horizon) -
-	// 
-	// from which we can recover mu:
-	float d_min = g_topRadius - r;
-	float d_max = rho + H;
-	float d = d_min + x_mu * (d_max - d_min);
-	mu = d == 0.0 ? float(1.0) : (H * H - rho * rho - d * d) / (2.0 * r * d);
-	mu = ClampCosine(mu);
-
-	return vec2(r, mu);
-}
-
-vec2 GetTransmittanceTextureUvFromRMu(float r, float mu)
-{
-	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	//assert(mu >= -1.0 && mu <= 1.0);
-	// Distance to top atmosphere boundary for a horizontal ray at ground level.
-	float H = sqrt(g_topRadius * g_topRadius - g_bottomRadius * g_bottomRadius);
-	// Distance to the horizon.
-	float rho = sqrt(r * r - g_bottomRadius * g_bottomRadius);
-	// Distance to the top atmosphere boundary for the ray (r,mu), and its minimum
-	// and maximum values over all mu - obtained for (r,1) and (r,mu_horizon).
-	float d = DistanceToTopAtmosphereBoundary(r, mu);
-	float d_min = g_topRadius - r;
-	float d_max = rho + H;
-	float x_mu = (d - d_min) / (d_max - d_min);
-	float x_r = rho / H;//(r - g_bottomRadius) / (g_topRadius - g_bottomRadius);//
-	return vec2(x_mu, x_r);
-}
 
 vec3 ComputeTransmittanceToTopAtmosphereBoundary( float r, float mu) 
 {
@@ -106,12 +34,11 @@ vec3 ComputeTransmittanceToTopAtmosphereBoundary( float r, float mu)
 
 		// Number density at the current sample point (divided by the number density
 		// at the bottom of the atmosphere, yielding a dimensionless number).
-		rayleighResult = GetLayerDensity(g_rayleighExpTerm, g_rayleighExpScale, g_rayleighLinearTerm, g_rayleighConstantTerm, r_i - g_bottomRadius) * weight_i * dx;
-		mieResult = GetLayerDensity(g_mieExpTerm, g_mieExpScale, g_mieLinearTerm, g_mieConstantTerm, r_i - g_bottomRadius) * weight_i * dx;
-		absorptionResult = GetLayerDensity(g_absorptionExpTerm, g_absorptionExpScale, g_absorptionLinearTerm, g_absorptionConstantTerm, r_i - g_bottomRadius) * weight_i * dx;
+		rayleighResult += GetLayerDensity(g_rayleighExpTerm, g_rayleighExpScale, g_rayleighLinearTerm, g_rayleighConstantTerm, r_i - g_bottomRadius) * weight_i * dx;
+		mieResult += GetLayerDensity(g_mieExpTerm, g_mieExpScale, g_mieLinearTerm, g_mieConstantTerm, r_i - g_bottomRadius) * weight_i * dx;
+		absorptionResult += GetLayerDensity(g_absorptionExpTerm, g_absorptionExpScale, g_absorptionLinearTerm, g_absorptionConstantTerm, r_i - g_bottomRadius) * weight_i * dx;
 	}
-
-	
+		
 	return exp(-(
 		g_rayleighScattering * rayleighResult +
 		g_mieExtinction * mieResult +
@@ -133,7 +60,7 @@ shader vec4 PS_PrecomputeTransmittance(posTexVertexOutput IN) : SV_TARGET
 
 shader vec4 PS_TransmittanceTest(posTexVertexOutput IN) : SV_TARGET
 {
-	float r = 6360000.0;
+	float r = 6380000.0;
 	
 	float d = 1.0;
 	
@@ -153,7 +80,7 @@ shader vec4 PS_TransmittanceTest(posTexVertexOutput IN) : SV_TARGET
 	//return vec4(GetTransmittanceTextureUvFromRMu(r, mu), 0.0, 0.0);
 
 	//vec4 result = g_Transmittance.Sample(clampSamplerState, vec2(GetTransmittanceTextureUvFromRMu(r, mu).x,mu));
-	return vec4(1.0 - result.x, 1.0 - result.y, 1.0 - result.z, 1.0);
+	return vec4(result.x, result.y, result.z, 1.0);
 }
 
 technique flat_colour

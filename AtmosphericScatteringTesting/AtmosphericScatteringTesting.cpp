@@ -68,6 +68,8 @@ wchar_t wszWindowClass[] = L"AtmosphericScatteringTest";
 int kOverrideWidth = 1440;
 int kOverrideHeight = 900;
 
+float mu_s = 0.5;
+
 enum class TestType
 {
 	UNKNOWN,
@@ -556,6 +558,7 @@ public:
 
 		atmosphereConstants.g_topRadius = 6420000.0;
 		atmosphereConstants.g_bottomRadius = 6360000.0;
+		atmosphereConstants.g_mu_s_min = -0.2;
 
 		atmosphereConstants.g_rayleighExpTerm = 1.f;
 		atmosphereConstants.g_rayleighExpScale = -1.f / 8000.f;
@@ -595,6 +598,14 @@ public:
 
 		atmosphereConstants.g_absorptionExtinction = (300.0 * 2.687e20 / 15000.0) * vec3(1.582000e-26, 3.500000e-25, 1.209000e-25);
 
+		atmosphereConstants.g_solarIrradiance = 0.01;
+
+		if (mu_s > 1.0)
+			mu_s = 1.0;
+		if (mu_s < 0.0)
+			mu_s = 0.0;
+		atmosphereConstants.g_mu_s = mu_s;
+
 		effect->SetConstantBuffer(deviceContext, &atmosphereConstants);
 
 		transmittanceEffect->Apply(deviceContext, precompute_transmittance, 0);
@@ -607,6 +618,7 @@ public:
 
 
 		singleScatteringEffect->Apply(deviceContext, precompute_single_scattering, 0);
+		effect->SetUnorderedAccessView(deviceContext, "singleScatteringOutput", singleScatteringTexture);
 		singleScatteringEffect->SetTexture(deviceContext, "g_Transmittance", transmittanceTexture);
 		renderPlatform->Draw(deviceContext, 4, 0);
 		singleScatteringEffect->Unapply(deviceContext);
@@ -614,11 +626,12 @@ public:
 		/*singleScatteringEffect->Apply(deviceContext, test_transmittance, 0);
 		singleScatteringEffect->SetTexture(deviceContext, "g_Transmittance", transmittanceTexture);
 		renderPlatform->Draw(deviceContext, 4, 0);
-		singleScatteringEffect->Unapply(deviceContext);
-		*/
-		renderPlatform->DrawTexture(deviceContext, 0, 0, w, h, transmittanceTexture);
+		singleScatteringEffect->Unapply(deviceContext);*/
+		
+		//renderPlatform->DrawTexture(deviceContext, 0, 0, w, h, transmittanceTexture);
 
 		delete transmittanceTexture;
+		delete singleScatteringTexture;
 	}
 };
 PlatformRenderer* platformRenderer;
@@ -650,16 +663,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					, (wParam & MK_MBUTTON) != 0
 					, 0, xPos, yPos);
 			}
-			break;
+			break;*/
 		case WM_KEYDOWN:
-			if (renderer)
-				renderer->OnKeyboard((unsigned)wParam, true);
+			if(wParam == VK_DOWN)
+				mu_s -= 0.01;
+			else if(wParam == VK_UP)
+				mu_s += 0.01;
 			break;
-		case WM_KEYUP:
-			if (renderer)
-				renderer->OnKeyboard((unsigned)wParam, false);
-			break;
-		case WM_COMMAND:
+		/*case WM_COMMAND:
 		{
 	int wmId, wmEvent;
 			wmId = LOWORD(wParam);
