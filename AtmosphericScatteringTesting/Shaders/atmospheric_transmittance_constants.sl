@@ -34,7 +34,7 @@ uniform float		g_mu_s;
 uniform float		g_bottomRadius;
 uniform float		g_topRadius;
 uniform float		g_mu_s_min;
-uniform float		fdsnmpiovpr;
+uniform float		g_height;
 SIMUL_CONSTANT_BUFFER_END
 
 #endif

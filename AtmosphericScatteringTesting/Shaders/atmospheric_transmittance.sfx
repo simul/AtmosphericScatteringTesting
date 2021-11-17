@@ -8,9 +8,6 @@
 uniform Texture2D	g_Transmittance :	register(t0);
 
 
-
-
-
 vec3 ComputeTransmittanceToTopAtmosphereBoundary( float r, float mu) 
 {
 	//assert(r >= g_bottomRadius && r <= g_topRadius);
@@ -38,7 +35,7 @@ vec3 ComputeTransmittanceToTopAtmosphereBoundary( float r, float mu)
 		mieResult += GetLayerDensity(g_mieExpTerm, g_mieExpScale, g_mieLinearTerm, g_mieConstantTerm, r_i - g_bottomRadius) * weight_i * dx;
 		absorptionResult += GetLayerDensity(g_absorptionExpTerm, g_absorptionExpScale, g_absorptionLinearTerm, g_absorptionConstantTerm, r_i - g_bottomRadius) * weight_i * dx;
 	}
-		
+	
 	return exp(-(
 		g_rayleighScattering * rayleighResult +
 		g_mieExtinction * mieResult +
@@ -60,15 +57,16 @@ shader vec4 PS_PrecomputeTransmittance(posTexVertexOutput IN) : SV_TARGET
 
 shader vec4 PS_TransmittanceTest(posTexVertexOutput IN) : SV_TARGET
 {
-	float r = 6380000.0;
+	float r = clamp(g_bottomRadius + g_height, g_bottomRadius, g_topRadius);
 	
 	float d = 1.0;
 	
 	vec2 centerCoordinates = vec2((IN.texCoords.x * 2.0) - 1.0, (IN.texCoords.y * 2.0) - 1.0);
 
-	float mu = sqrt(centerCoordinates.x * centerCoordinates.x + centerCoordinates.y * centerCoordinates.y);
+	float mu = 1.0 - sqrt(centerCoordinates.x * centerCoordinates.x + centerCoordinates.y * centerCoordinates.y);
 
-	if (mu > 1.0)
+
+	if (sqrt(centerCoordinates.x * centerCoordinates.x + centerCoordinates.y * centerCoordinates.y) > 1.0)
 		return vec4(0.0, 0.0, 0.0, 0.0);
 
 	float r_d = ClampRadius(sqrt(d * d + 2.0 * r * mu * d + r * r));
@@ -119,3 +117,4 @@ technique precompute_transmittance
 		SetPixelShader(CompileShader(ps_5_0, PS_PrecomputeTransmittance));
 	}
 }
+

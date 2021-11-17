@@ -1,0 +1,270 @@
+#include "shader_platform.sl"
+#include "common.sl"
+#include "sampler_states.sl"
+#include "render_states.sl"
+#include "atmospheric_transmittance_constants.sl"
+#include "atmospheric_testing.sl"
+
+#define BLOCK_X 16
+#define BLOCK_Y 16
+
+uniform Texture2D	g_Transmittance : register(t0);
+uniform RWTexture3D<vec4> singleScatteringOutput SIMUL_RWTEXTURE_REGISTER(3);
+uniform RWTexture3D<vec4> multipleScatteringOutput SIMUL_RWTEXTURE_REGISTER(4);
+uniform Texture3D g_singleScattering SIMUL_TEXTURE_REGISTER(2);
+uniform Texture3D g_multipleScattering SIMUL_TEXTURE_REGISTER(5);
+
+vec3 GetTransmittanceToTopAtmosphereBoundary(float r, float mu) {
+    //assert(r >= atmosphere.bottom_radius && r <= g_topRadius);
+    vec2 uv = GetTransmittanceTextureUvFromRMu(r, mu);
+
+    vec4 result = g_Transmittance.SampleLevel(clampSamplerState, uv, 0);
+
+    return result.xyz;
+}
+
+vec3 GetTransmittance(float r, float mu, float d, bool ray_r_mu_intersects_ground) 
+{
+    //assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+    //assert(mu >= -1.0 && mu <= 1.0);
+    //assert(d >= 0.0 * m);
+
+    float r_d = ClampRadius(sqrt(d * d + 2.0 * r * mu * d + r * r));
+    float mu_d = ClampCosine((r * mu + d) / r_d);
+
+    if (ray_r_mu_intersects_ground)
+    {
+        mu_d *= -1;
+        mu *= -1;
+    }
+
+    return min(GetTransmittanceToTopAtmosphereBoundary(r, mu) / GetTransmittanceToTopAtmosphereBoundary(r_d, mu_d), 1.0);
+}
+
+vec3 GetTransmittanceToSun(float r, float mu_s) {
+    float sun_angular_radius = 0.05;
+
+    float sin_theta_h = g_bottomRadius / r;
+    float cos_theta_h = -sqrt(max(1.0 - sin_theta_h * sin_theta_h, 0.0));
+    return GetTransmittanceToTopAtmosphereBoundary(r, mu_s) * smoothstep(-sin_theta_h * sun_angular_radius, sin_theta_h * sun_angular_radius, mu_s - cos_theta_h);//  
+}
+
+vec3 GetScattering(float r, float mu, float mu_s, float nu,bool ray_r_mu_intersects_ground)
+{
+    vec4 uvwz = GetScatteringTextureUvwzFromRMuMuSNu(r, mu, mu_s, nu, ray_r_mu_intersects_ground);
+    float tex_coord_x = uvwz.x * 8.0f;
+    float tex_x = floor(tex_coord_x);
+    float lerp = tex_coord_x - tex_x;
+    vec3 uvw0 = vec3((tex_x + uvwz.y) / 8.0f,
+        uvwz.z, uvwz.w);
+    vec3 uvw1 = vec3((tex_x + 1.0 + uvwz.y) / 8.0f, uvwz.z, uvwz.w);
+    return (g_singleScattering.SampleLevel(clampSamplerState, uvw0, 0) * (1.0 - lerp)) + (g_singleScattering.SampleLevel(clampSamplerState, uvw1, 0) * lerp);
+}
+
+
+CS_LAYOUT(BLOCK_X, BLOCK_Y, 1)
+shader void CS_PrecomputeSingleScattering(uint3 p : SV_DispatchThreadID)
+{
+    //vec2 coords = GetRMuFromTransmittanceTextureUv(IN.texCoords);
+    uint3 dims;
+    uint3 idx = p;
+    GET_IMAGE_DIMENSIONS_3D(singleScatteringOutput, dims.x, dims.y, dims.z);
+    vec3 texcoords = vec3(vec3(idx) / vec3(dims));
+    
+    float frag_coord_nu = floor(idx.x / float(32)) / 7.0;//
+    float frag_coord_mu_s = fmod(idx.x, float(32)) / 32.0;
+
+    vec4 coords = GetRMuMuSNuFromScatteringTextureUvwz(vec4(frag_coord_nu, frag_coord_mu_s, texcoords.y, texcoords.z));
+
+    bool ray_r_mu_intersects_ground = (coords.x < 0);
+
+    float r = abs(coords.x);
+    float mu = coords.y;
+    //float d = 1000.f;
+    float mu_s = coords.z;
+    float nu = coords.w;// (texcoords.x * 2.0) - 1.0;
+    nu = clamp(nu, mu * mu_s - sqrt((1.0 - mu * mu) * (1.0 - mu_s * mu_s)), mu * mu_s + sqrt((1.0 - mu * mu) * (1.0 - mu_s * mu_s)));
+
+    const int SAMPLE_COUNT = 50;
+    float dx = DistanceToNearestAtmosphereBoundary(r, mu, ray_r_mu_intersects_ground) / float(SAMPLE_COUNT);
+
+    vec3 rayleigh_sum = vec3(0, 0, 0);
+    vec3 mie_sum = vec3(0, 0, 0);
+    vec3 transmittance = vec3(0, 0, 0); 
+
+    float r_d;
+    float mu_s_d;
+    float d_i;
+    for(int i = 0; i <= SAMPLE_COUNT; ++i) {
+        d_i = float(i) * dx;
+
+        r_d = ClampRadius(sqrt(d_i * d_i + 2.0 * r * mu * d_i + r * r));
+        mu_s_d = ClampCosine((r * mu_s + d_i * nu) / r_d);
+
+        transmittance = GetTransmittance(r, mu, d_i, ray_r_mu_intersects_ground) *GetTransmittanceToSun(r_d, mu_s_d);//
+        float weight_i = (i == 0 || i == SAMPLE_COUNT) ? 0.5 : 1.0;
+        rayleigh_sum += transmittance * GetLayerDensity(g_rayleighExpTerm, g_rayleighExpScale, g_rayleighLinearTerm, g_rayleighConstantTerm, r_d - g_bottomRadius) * weight_i;
+        mie_sum += transmittance * GetLayerDensity(g_mieExpTerm, g_mieExpScale, g_mieLinearTerm, g_mieConstantTerm, r_d - g_bottomRadius) * weight_i;
+    }
+
+    vec3 rayleigh = rayleigh_sum * dx * g_solarIrradiance * g_rayleighScattering;
+    vec3 mie = mie_sum * dx * g_solarIrradiance * g_mieScattering;
+
+    singleScatteringOutput[idx] = vec4(rayleigh, 0.0);
+}
+
+
+shader vec4 PS_TestSingleScattering(posTexVertexOutput IN) : SV_TARGET
+{
+    return g_singleScattering.Sample(clampSamplerState,float3(IN.texCoords.x,IN.texCoords.y, g_mu_s));
+   // return vec4(1.0,0.0,0.0,0.0);
+}
+
+shader vec4 PS_TestSingleScatteringSkybox(posTexVertexOutput IN) : SV_TARGET
+{
+    float r = clamp(g_bottomRadius + g_height, g_bottomRadius, g_topRadius);
+    bool ground = false;
+    vec3 sunDirection = normalize(vec3(0.0, 10.0, 1.0));
+
+    vec2 centerCoordinates = vec2((IN.texCoords.x * 2.0) - 1.0, (IN.texCoords.y * 2.0) - 1.0);
+
+    if (sqrt(centerCoordinates.x * centerCoordinates.x + centerCoordinates.y * centerCoordinates.y) > 1.0)
+    {
+        //ground = true;
+        //return vec4(0.0, 0.0, 0.0, 0.0);
+    }
+
+    vec3 viewDir = vec3(centerCoordinates, 1.0 - sqrt(centerCoordinates.x * centerCoordinates.x + centerCoordinates.y * centerCoordinates.y));
+
+    float rmu = dot(vec3(0.0, 0.0, r), viewDir);
+
+    float mu = rmu / r;
+    float mu_s = dot(vec3(0.0, 0.0, r), sunDirection) / r;
+    float nu = dot(viewDir, sunDirection);
+
+    vec4 uvwz = GetScatteringTextureUvwzFromRMuMuSNu(r, mu, mu_s, nu, ground);
+
+    float tex_coord_x = uvwz.x * 8;
+    float tex_x = floor(tex_coord_x);
+    float lerp = tex_coord_x - tex_x;
+    vec3 uvw0 = vec3((tex_x + uvwz.y) / 8.0, uvwz.z, uvwz.w) ;
+    vec3 uvw1 = vec3((tex_x + 1.0 + uvwz.y) / 8.0, uvwz.z, uvwz.w) ;
+
+    return ((g_singleScattering.Sample(clampSamplerState, uvw0) * (1.0 - lerp)) + (g_singleScattering.Sample(clampSamplerState, uvw1) * lerp)) * RayleighPhaseFunction(nu);//
+
+    // return vec4(nu, 0.0, 0.0, 0.0); //
+
+    //return g_singleScattering.Sample(clampSamplerState,float3(IN.texCoords.x,IN.texCoords.y, g_mu_s));
+    // return vec4(1.0,0.0,0.0,0.0);
+}
+
+CS_LAYOUT(BLOCK_X, BLOCK_Y, 1)
+shader void CS_PrecomputeMultipleScatteringTexture(uint3 p : SV_DispatchThreadID)
+{
+    //vec2 coords = GetRMuFromTransmittanceTextureUv(IN.texCoords);
+    uint3 dims;
+    uint3 idx = p;
+    GET_IMAGE_DIMENSIONS_3D(singleScatteringOutput, dims.x, dims.y, dims.z);
+    vec3 texcoords = vec3(vec3(idx) / vec3(dims));
+
+    float frag_coord_nu = floor(idx.x / float(32)) / 7.0;//
+    float frag_coord_mu_s = fmod(idx.x, float(32)) / 32.0;
+
+    vec4 coords = GetRMuMuSNuFromScatteringTextureUvwz(vec4(frag_coord_nu, frag_coord_mu_s, texcoords.y, texcoords.z));
+
+    bool ray_r_mu_intersects_ground = (coords.x < 0);
+
+    float r = abs(coords.x);
+    float mu = coords.y;
+    //float d = 1000.f;
+    float mu_s = coords.z;
+    float nu = coords.w;// (texcoords.x * 2.0) - 1.0;
+    nu = clamp(nu, mu * mu_s - sqrt((1.0 - mu * mu) * (1.0 - mu_s * mu_s)), mu * mu_s + sqrt((1.0 - mu * mu) * (1.0 - mu_s * mu_s)));
+
+
+    // Number of intervals for the numerical integration.
+    const int SAMPLE_COUNT = 50;
+    // The integration step, i.e. the length of each integration interval.
+    float dx = DistanceToNearestAtmosphereBoundary(r, mu, ray_r_mu_intersects_ground) / float(SAMPLE_COUNT);
+    // Integration loop.
+    vec3 rayleigh_mie_sum = 0.0;
+    for (int i = 0; i <= SAMPLE_COUNT; ++i) 
+    {
+        float d_i = float(i) * dx;
+
+        // The r, mu and mu_s parameters at the current integration point (see the
+        // single scattering section for a detailed explanation).
+        float r_i = ClampRadius(sqrt(d_i * d_i + 2.0 * r * mu * d_i + r * r));
+        float mu_i = ClampCosine((r * mu + d_i) / r_i);
+        float mu_s_i = ClampCosine((r * mu_s + d_i * nu) / r_i);
+
+        // The Rayleigh and Mie multiple scattering at the current sample point.
+        vec3 rayleigh_mie_i = GetTransmittance(r, mu, d_i, ray_r_mu_intersects_ground) * GetScattering(r_i, mu_i, mu_s_i, nu, ray_r_mu_intersects_ground) * dx;// 
+        // Sample weight (from the trapezoidal rule).
+        float weight_i = (i == 0 || i == SAMPLE_COUNT) ? 0.5 : 1.0;
+        rayleigh_mie_sum += rayleigh_mie_i * weight_i;
+    }
+
+    multipleScatteringOutput[idx] = vec4(rayleigh_mie_sum, 0.0) * RayleighPhaseFunction(nu);
+}
+
+shader vec4 PS_TestMultipleScattering(posTexVertexOutput IN) : SV_TARGET
+{
+    return g_multipleScattering.Sample(clampSamplerState,float3(IN.texCoords.x,IN.texCoords.y, g_mu_s));
+// return vec4(1.0,0.0,0.0,0.0);
+}
+
+//##########################################################################################################
+//##########################################################################################################
+
+technique precompute_single_scattering
+{
+    pass p0
+    {
+        SetComputeShader(CompileShader(cs_5_0,CS_PrecomputeSingleScattering()));
+    }
+}
+
+technique test_single_scattering
+{
+    pass main
+    {
+        SetRasterizerState(RenderNoCull);
+        SetDepthStencilState(ReverseDepth, 0);
+        SetBlendState(NoBlend, vec4(0.0, 0.0, 0.0, 0.0), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_5_0, VS_SimpleFullscreen));
+        SetPixelShader(CompileShader(ps_5_0, PS_TestSingleScattering));
+    }
+}
+
+technique test_single_scattering_skybox
+{
+    pass main
+    {
+        SetRasterizerState(RenderNoCull);
+        SetDepthStencilState(ReverseDepth, 0);
+        SetBlendState(NoBlend, vec4(0.0, 0.0, 0.0, 0.0), 0xFFFFFFFF);
+        SetVertexShader(CompileShader(vs_5_0, VS_SimpleFullscreen));
+        SetPixelShader(CompileShader(ps_5_0, PS_TestSingleScatteringSkybox));
+    }
+}
+    
+technique precompute_multiple_scattering_texture
+{
+    pass p0
+    {
+        SetComputeShader(CompileShader(cs_5_0,CS_PrecomputeMultipleScatteringTexture()));
+    }
+}
+
+technique test_multiple_scattering
+    {
+        pass main
+        {
+            SetRasterizerState(RenderNoCull);
+            SetDepthStencilState(ReverseDepth, 0);
+            SetBlendState(NoBlend, vec4(0.0, 0.0, 0.0, 0.0), 0xFFFFFFFF);
+            SetVertexShader(CompileShader(vs_5_0, VS_SimpleFullscreen));
+            SetPixelShader(CompileShader(ps_5_0, PS_TestMultipleScattering));
+        }
+    }

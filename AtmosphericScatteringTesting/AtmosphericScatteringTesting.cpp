@@ -62,6 +62,12 @@ platform::core::CommandLineParams commandLineParams;
 
 crossplatform::ConstantBuffer<cbAtmosphere>	atmosphereConstants;
 
+crossplatform::Texture* transmittanceTexture;
+crossplatform::Texture* singleScatteringTexture;
+crossplatform::Texture* multipleScatteringTexture;
+
+bool texturesGenerated = false;
+
 HWND hWnd = nullptr;
 HINSTANCE hInst;
 wchar_t wszWindowClass[] = L"AtmosphericScatteringTest";
@@ -69,6 +75,7 @@ int kOverrideWidth = 1440;
 int kOverrideHeight = 900;
 
 float mu_s = 0.5;
+float height = 0.0;
 
 enum class TestType
 {
@@ -115,7 +122,7 @@ public:
 	crossplatform::BaseFramebuffer* hdrFramebuffer = nullptr;
 	crossplatform::Effect* effect = nullptr;
 	crossplatform::Effect* transmittanceEffect = nullptr;
-	crossplatform::Effect* singleScatteringEffect = nullptr;
+	crossplatform::Effect* scatteringEffect = nullptr;
 	crossplatform::ConstantBuffer<SceneConstants>	sceneConstants;
 	crossplatform::ConstantBuffer<CameraConstants>	cameraConstants;
 
@@ -256,7 +263,7 @@ public:
 		effect = renderPlatform->CreateEffect();
 		effect->Load(renderPlatform, "solid");
 		transmittanceEffect = renderPlatform->CreateEffect("atmospheric_transmittance");
-		singleScatteringEffect = renderPlatform->CreateEffect("atmospheric_single_scattering");
+		scatteringEffect = renderPlatform->CreateEffect("atmospheric_scattering");
 		sceneConstants.RestoreDeviceObjects(renderPlatform);
 		sceneConstants.LinkToEffect(effect, "SolidConstants");
 		cameraConstants.RestoreDeviceObjects(renderPlatform);
@@ -287,11 +294,11 @@ public:
 			delete transmittanceEffect;
 			transmittanceEffect = nullptr;
 		}
-		if (singleScatteringEffect)
+		if (scatteringEffect)
 		{
-			singleScatteringEffect->InvalidateDeviceObjects();
-			delete singleScatteringEffect;
-			singleScatteringEffect = nullptr;
+			scatteringEffect->InvalidateDeviceObjects();
+			delete scatteringEffect;
+			scatteringEffect = nullptr;
 		}
 		sceneConstants.InvalidateDeviceObjects();
 		cameraConstants.InvalidateDeviceObjects();
@@ -542,96 +549,136 @@ public:
 	{
 		hdrFramebuffer->Clear(deviceContext, 0.00f, 0.31f, 0.57f, 1.00f, reverseDepth ? 0.0f : 1.0f);
 
-		crossplatform::Texture* transmittanceTexture = renderPlatform->CreateTexture();
-		crossplatform::Texture* singleScatteringTexture = renderPlatform->CreateTexture();
-		transmittanceTexture->ensureTexture2DSizeAndFormat(renderPlatform, 256, 256, 1, crossplatform::PixelFormat::RGBA_32_FLOAT, false, true, false, 1,0,false,vec4(0.0,0.0,0.0,0.0));
-		singleScatteringTexture->ensureTexture3DSizeAndFormat(renderPlatform, 256, 128, 32, crossplatform::PixelFormat::RGBA_32_FLOAT, false, 1, true);
+		if (!texturesGenerated)
+		{
+			transmittanceTexture = renderPlatform->CreateTexture();
+			singleScatteringTexture = renderPlatform->CreateTexture();
+			multipleScatteringTexture = renderPlatform->CreateTexture();
+			transmittanceTexture->ensureTexture2DSizeAndFormat(renderPlatform, 256, 256, 1, crossplatform::PixelFormat::RGBA_32_FLOAT, false, true, false, 1, 0, false, vec4(0.0, 0.0, 0.0, 0.0));
+			singleScatteringTexture->ensureTexture3DSizeAndFormat(renderPlatform, 256, 128, 32, crossplatform::PixelFormat::RGBA_32_FLOAT, true, 1, false);
+			renderPlatform->ClearTexture(deviceContext, singleScatteringTexture, vec4(1.0, 0.0, 1.0, 0.0));
+			multipleScatteringTexture->ensureTexture3DSizeAndFormat(renderPlatform, 256, 128, 32, crossplatform::PixelFormat::RGBA_32_FLOAT, true, 1, false);
+			renderPlatform->ClearTexture(deviceContext, multipleScatteringTexture, vec4(0.0, 1.0, 1.0, 0.0));
 
-		//crossplatform::Effect* transmittance = renderPlatform->CreateEffect("atmospheric_transmittance");
-		crossplatform::EffectTechnique* precompute_transmittance = transmittanceEffect->GetTechniqueByName("precompute_transmittance");
-		crossplatform::EffectTechnique* test_transmittance = transmittanceEffect->GetTechniqueByName("visualise_transmittance");
+			//crossplatform::Effect* transmittance = renderPlatform->CreateEffect("atmospheric_transmittance");
+			crossplatform::EffectTechnique* precompute_transmittance = transmittanceEffect->GetTechniqueByName("precompute_transmittance");
+			crossplatform::EffectTechnique* precompute_single_scattering = scatteringEffect->GetTechniqueByName("precompute_single_scattering");
+			crossplatform::EffectTechnique* precompute_multiple_scattering_texture = scatteringEffect->GetTechniqueByName("precompute_multiple_scattering_texture");
 
-		crossplatform::EffectTechnique* precompute_single_scattering = singleScatteringEffect->GetTechniqueByName("precompute_single_scattering");
+			atmosphereConstants.LinkToEffect(transmittanceEffect, "cbAtmosphere");
+			atmosphereConstants.LinkToEffect(scatteringEffect, "cbAtmosphere");
 
-		atmosphereConstants.LinkToEffect(transmittanceEffect, "cbAtmosphere");
-		atmosphereConstants.LinkToEffect(singleScatteringEffect, "cbAtmosphere");
+			atmosphereConstants.g_topRadius = 6420000.0;
+			atmosphereConstants.g_bottomRadius = 6360000.0;
+			atmosphereConstants.g_mu_s_min = -0.2;
 
-		atmosphereConstants.g_topRadius = 6420000.0;
-		atmosphereConstants.g_bottomRadius = 6360000.0;
-		atmosphereConstants.g_mu_s_min = -0.2;
+			atmosphereConstants.g_rayleighExpTerm = 1.f;
+			atmosphereConstants.g_rayleighExpScale = -1.f / 8000.f;
+			atmosphereConstants.g_rayleighLinearTerm = 0.f;
+			atmosphereConstants.g_rayleighConstantTerm = 0.f;
 
-		atmosphereConstants.g_rayleighExpTerm = 1.f;
-		atmosphereConstants.g_rayleighExpScale = -1.f / 8000.f;
-		atmosphereConstants.g_rayleighLinearTerm = 0.f;
-		atmosphereConstants.g_rayleighConstantTerm = 0.f;
+			atmosphereConstants.g_rayleighScattering = vec3(rayleigh_approx(630), rayleigh_approx(550), rayleigh_approx(440)) * 0.001f;
+			atmosphereConstants.g_rayleighDensity;
 
-		atmosphereConstants.g_rayleighScattering = vec3(rayleigh_approx(680), rayleigh_approx(550), rayleigh_approx(440));
-		atmosphereConstants.g_rayleighDensity;
+			atmosphereConstants.g_mieExpTerm = 1.f;
+			atmosphereConstants.g_mieExpScale = -1.f / 1200.f;
+			atmosphereConstants.g_mieLinearTerm = 0.f;
+			atmosphereConstants.g_mieConstantTerm = 0.f;
 
-		atmosphereConstants.g_mieExpTerm = 1.f;
-		atmosphereConstants.g_mieExpScale = -1.f / 1200.f;
-		atmosphereConstants.g_mieLinearTerm = 0.f;
-		atmosphereConstants.g_mieConstantTerm = 0.f;
+			double haze = 1.f;
+			double nu = 4.0;
+			double T = (1.0 + haze);
+			double c = (0.6544 * T - 0.6510) * 1e-16;
+			if (haze > 1.0f)
+				c /= haze;
+			if (c < 0.0)
+				c = 0.0;
+			vec3 Mie;
+			Mie.x = (float)(0.434 * c * SIMUL_PI_D * pow(2.0 * SIMUL_PI_D / (680.f * 1e-9), nu - 2) * 0.68455);
+			Mie.y = (float)(0.434 * c * SIMUL_PI_D * pow(2.0 * SIMUL_PI_D / (550.f * 1e-9), nu - 2) * 0.673323);
+			Mie.z = (float)(0.434 * c * SIMUL_PI_D * pow(2.0 * SIMUL_PI_D / (440.f * 1e-9), nu - 2) * 0.6691485);
 
-		double haze = 1.f;
-		double nu = 4.0;
-		double T = (1.0 + haze);
-		double c = (0.6544 * T - 0.6510) * 1e-16;
-		if (haze > 1.0f)
-			c /= haze;
-		if (c < 0.0)
-			c = 0.0;
-		vec3 Mie;
-		Mie.x = (float)(0.434 * c * SIMUL_PI_D * pow(2.0 * SIMUL_PI_D / (680.f * 1e-9), nu - 2) * 0.68455);
-		Mie.y = (float)(0.434 * c * SIMUL_PI_D * pow(2.0 * SIMUL_PI_D / (550.f * 1e-9), nu - 2) * 0.673323);
-		Mie.z = (float)(0.434 * c * SIMUL_PI_D * pow(2.0 * SIMUL_PI_D / (440.f * 1e-9), nu - 2) * 0.6691485);
+			atmosphereConstants.g_mieScattering;
+			atmosphereConstants.g_miePhaseFunction = 0.8f;
 
-		atmosphereConstants.g_mieScattering;
-		atmosphereConstants.g_miePhaseFunction = 0.8f;
+			atmosphereConstants.g_mieExtinction = Mie * 0.001f;
 
-		atmosphereConstants.g_mieExtinction = Mie;
+			atmosphereConstants.g_absorptionExpTerm = 0.f;
+			atmosphereConstants.g_absorptionExpScale = 0.f;
+			atmosphereConstants.g_absorptionLinearTerm = 1.f / 15000.f;
+			atmosphereConstants.g_absorptionConstantTerm = -2.f / 3.f;
 
-		atmosphereConstants.g_absorptionExpTerm = 0.f;
-		atmosphereConstants.g_absorptionExpScale = 0.f;
-		atmosphereConstants.g_absorptionLinearTerm = 1.f / 15000.f;
-		atmosphereConstants.g_absorptionConstantTerm = -2.f / 3.f;
+			atmosphereConstants.g_absorptionExtinction = (300.0 * 2.687e20 / 15000.0) * vec3(1.582000e-26, 3.500000e-25, 1.209000e-25);
 
-		atmosphereConstants.g_absorptionExtinction = (300.0 * 2.687e20 / 15000.0) * vec3(1.582000e-26, 3.500000e-25, 1.209000e-25);
+			atmosphereConstants.g_solarIrradiance = 1.5;
 
-		atmosphereConstants.g_solarIrradiance = 0.01;
 
+			atmosphereConstants.g_mu_s = mu_s;
+			atmosphereConstants.g_height = height;
+
+			effect->SetConstantBuffer(deviceContext, &atmosphereConstants);
+
+			transmittanceEffect->Apply(deviceContext, precompute_transmittance, 0);
+
+			transmittanceTexture->activateRenderTarget(deviceContext);
+			renderPlatform->DrawQuad(deviceContext);
+			transmittanceTexture->deactivateRenderTarget(deviceContext);
+
+			transmittanceEffect->Unapply(deviceContext);
+
+
+			scatteringEffect->Apply(deviceContext, precompute_single_scattering, 0);
+			scatteringEffect->SetUnorderedAccessView(deviceContext, "singleScatteringOutput", singleScatteringTexture);
+			scatteringEffect->SetTexture(deviceContext, "g_Transmittance", transmittanceTexture);
+			renderPlatform->DispatchCompute(deviceContext, 256, 128, 32);
+			scatteringEffect->Unapply(deviceContext);
+			scatteringEffect->UnbindTextures(deviceContext);
+
+			scatteringEffect->Apply(deviceContext, precompute_multiple_scattering_texture, 0);
+			scatteringEffect->SetUnorderedAccessView(deviceContext, "multipleScatteringOutput", multipleScatteringTexture);
+			scatteringEffect->SetTexture(deviceContext, "g_Transmittance", transmittanceTexture);
+			scatteringEffect->SetTexture(deviceContext, "g_singleScattering", singleScatteringTexture);
+			renderPlatform->DispatchCompute(deviceContext, 256, 128, 32);
+			scatteringEffect->Unapply(deviceContext);
+			scatteringEffect->UnbindTextures(deviceContext);
+
+			texturesGenerated = true;
+		}
 		if (mu_s > 1.0)
 			mu_s = 1.0;
 		if (mu_s < 0.0)
 			mu_s = 0.0;
+
+
+		atmosphereConstants.g_height = height;
 		atmosphereConstants.g_mu_s = mu_s;
-
-		effect->SetConstantBuffer(deviceContext, &atmosphereConstants);
-
-		transmittanceEffect->Apply(deviceContext, precompute_transmittance, 0);
-
-		transmittanceTexture->activateRenderTarget(deviceContext);
-		renderPlatform->DrawQuad(deviceContext);
-		transmittanceTexture->deactivateRenderTarget(deviceContext);
-
-		transmittanceEffect->Unapply(deviceContext);
-
-
-		singleScatteringEffect->Apply(deviceContext, precompute_single_scattering, 0);
-		effect->SetUnorderedAccessView(deviceContext, "singleScatteringOutput", singleScatteringTexture);
-		singleScatteringEffect->SetTexture(deviceContext, "g_Transmittance", transmittanceTexture);
-		renderPlatform->Draw(deviceContext, 4, 0);
-		singleScatteringEffect->Unapply(deviceContext);
-
-		/*singleScatteringEffect->Apply(deviceContext, test_transmittance, 0);
-		singleScatteringEffect->SetTexture(deviceContext, "g_Transmittance", transmittanceTexture);
-		renderPlatform->Draw(deviceContext, 4, 0);
-		singleScatteringEffect->Unapply(deviceContext);*/
 		
-		//renderPlatform->DrawTexture(deviceContext, 0, 0, w, h, transmittanceTexture);
+		effect->SetConstantBuffer(deviceContext, &atmosphereConstants);		/*
 
-		delete transmittanceTexture;
-		delete singleScatteringTexture;
+		crossplatform::EffectTechnique* test_single_scattering = scatteringEffect->GetTechniqueByName("test_single_scattering_skybox");
+		scatteringEffect->Apply(deviceContext, test_single_scattering, 0);
+		scatteringEffect->SetTexture(deviceContext, "g_singleScattering", singleScatteringTexture);
+		renderPlatform->Draw(deviceContext, 4, 0);
+		scatteringEffect->Unapply(deviceContext);
+
+		crossplatform::EffectTechnique* test_transmittance = transmittanceEffect->GetTechniqueByName("visualise_transmittance");
+		transmittanceEffect->SetConstantBuffer(deviceContext, &atmosphereConstants);
+		transmittanceEffect->Apply(deviceContext, test_transmittance, 0);
+		transmittanceEffect->SetTexture(deviceContext, "g_Transmittance", transmittanceTexture);
+		renderPlatform->Draw(deviceContext, 4, 0);
+		transmittanceEffect->Unapply(deviceContext);
+		*/
+
+		crossplatform::EffectTechnique* test_multiple_scattering = scatteringEffect->GetTechniqueByName("test_multiple_scattering");
+		scatteringEffect->Apply(deviceContext, test_multiple_scattering, 0);
+		scatteringEffect->SetTexture(deviceContext, "g_multipleScattering", multipleScatteringTexture);
+		renderPlatform->Draw(deviceContext, 4, 0);
+		scatteringEffect->Unapply(deviceContext);
+
+		//renderPlatform->DrawTexture(deviceContext, 0, 0, w, h, transmittanceTexture, 1.0f, false, 0.45f);
+
+		//delete transmittanceTexture;
+		//delete singleScatteringTexture;
 	}
 };
 PlatformRenderer* platformRenderer;
@@ -665,10 +712,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			}
 			break;*/
 		case WM_KEYDOWN:
-			if(wParam == VK_DOWN)
+			if (wParam == VK_DOWN)
+			{
 				mu_s -= 0.01;
-			else if(wParam == VK_UP)
+				height -= 500;
+			}
+			else if (wParam == VK_UP)
+			{
 				mu_s += 0.01;
+				height += 500;
+			}
 			break;
 		/*case WM_COMMAND:
 		{
