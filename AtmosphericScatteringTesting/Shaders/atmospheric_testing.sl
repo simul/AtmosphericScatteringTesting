@@ -68,6 +68,12 @@ float DistanceToNearestAtmosphereBoundary(float r, float mu, bool ray_r_mu_inter
 	}
 }
 
+bool RayIntersectsGround(float r, float mu) {
+	//assert(r >= atmosphere.bottom_radius);
+	//assert(mu >= -1.0 && mu <= 1.0);
+	return (mu < 0.0 && r * r * (mu * mu - 1.0) + g_bottomRadius * g_bottomRadius >= 0.0);
+}
+
 vec2 GetRMuFromTransmittanceTextureUv(vec2 uv) {
 	//assert(uv.x >= 0.0 && uv.x <= 1.0);
 	//assert(uv.y >= 0.0 && uv.y <= 1.0);
@@ -109,6 +115,24 @@ vec2 GetTransmittanceTextureUvFromRMu(float r, float mu)
 	float x_mu = (d - d_min) / (d_max - d_min);
 	float x_r = rho / H;//(r - g_bottomRadius) / (g_topRadius - g_bottomRadius);//
 	return vec2(x_mu, x_r);
+}
+
+vec2 GetRMuSFromIrradianceTextureUv(vec2 uv) {
+	//assert(uv.x >= 0.0 && uv.x <= 1.0);
+	//assert(uv.y >= 0.0 && uv.y <= 1.0);
+	float x_mu_s = GetUnitRangeFromTextureCoord(uv.x, 256);
+	float x_r = GetUnitRangeFromTextureCoord(uv.y, 256);
+	float r = g_bottomRadius + x_r * (g_topRadius - g_bottomRadius);
+	float mu_s = ClampCosine(2.0 * x_mu_s - 1.0);
+	return vec2(r, mu_s);
+}
+
+vec2 GetIrradianceTextureUvFromRMuS(float r, float mu_s) {
+	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	//assert(mu_s >= -1.0 && mu_s <= 1.0);
+	float x_r = (r - g_bottomRadius) / (g_topRadius - g_bottomRadius);
+	float x_mu_s = mu_s * 0.5 + 0.5;
+	return vec2(GetTextureCoordFromUnitRange(x_mu_s, 256), GetTextureCoordFromUnitRange(x_r, 256));
 }
 
 vec4 GetScatteringTextureUvwzFromRMuMuSNu(float r, float mu, float mu_s, float nu, bool ray_r_mu_intersects_ground) 

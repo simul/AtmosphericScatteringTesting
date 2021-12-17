@@ -35,6 +35,11 @@ uniform float		g_bottomRadius;
 uniform float		g_topRadius;
 uniform float		g_mu_s_min;
 uniform float		g_height;
+
+uniform float		g_groundAlbedo;
+uniform float		g_scatteringOrder;
+uniform float		vyusibvs;
+uniform float		cidbsuo;
 SIMUL_CONSTANT_BUFFER_END
 
 #endif
