@@ -21,7 +21,7 @@ uniform vec3		g_mieScattering;
 uniform float		g_miePhaseFunction;
 
 uniform vec3		g_mieExtinction;
-uniform float		g_topRadius;
+uniform float		g_solarIrradiance;
 
 uniform float		g_absorptionExpTerm;
 uniform float		g_absorptionExpScale;
@@ -29,8 +29,17 @@ uniform float		g_absorptionLinearTerm;
 uniform float		g_absorptionConstantTerm;
 
 uniform vec3		g_absorptionExtinction;
-uniform float		g_bottomRadius;
+uniform float		g_mu_s;
 
+uniform float		g_bottomRadius;
+uniform float		g_topRadius;
+uniform float		g_mu_s_min;
+uniform float		g_height;
+
+uniform float		g_groundAlbedo;
+uniform float		g_scatteringOrder;
+uniform float		vyusibvs;
+uniform float		cidbsuo;
 SIMUL_CONSTANT_BUFFER_END
 
 #endif

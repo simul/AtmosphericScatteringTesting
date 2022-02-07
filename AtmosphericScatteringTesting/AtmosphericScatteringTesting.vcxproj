@@ -29,26 +29,26 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>false</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
     <PreferredToolArchitecture>x64</PreferredToolArchitecture>
@@ -175,17 +175,18 @@ exit /b %1
 if %errorlevel% neq 0 goto :VCEnd</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Transmittance Shader</Message>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\AtmosphericScatteringTesting\AtmosphericScatteringTesting\x64\Release\shaderbin\DirectX12\atmospheric_transmittance.sfxo</Outputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">atmospheric_testing.sl</AdditionalInputs>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <CustomBuild Include="Shaders\atmospheric_single_scattering.sfx">
+    <CustomBuild Include="Shaders\atmospheric_scattering.sfx">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
 cd C:\AtmosphericScatteringTesting\AtmosphericScatteringTesting\x64\Release\shaderbin
 if %errorlevel% neq 0 goto :cmEnd
 C:
 if %errorlevel% neq 0 goto :cmEnd
-C:\Platform\build\bin\Release\Sfx.exe C:\AtmosphericScatteringTesting\AtmosphericScatteringTesting\AtmosphericScatteringTesting\Shaders\atmospheric_single_scattering.sfx -I"C:/Platform/DirectX12/Sfx" -I"C:/Platform/Shaders/SL" -O"C:\AtmosphericScatteringTesting\AtmosphericScatteringTesting\x64\Release\shaderbin\DirectX12" -P"C:/Platform/DirectX12/Sfx/DirectX12.json" -M"C:/Platform/build/DirectX12/sfx_intermediate" -w -EPLATFORM=C:/Platform -ESIMUL_XDK_VERSION= -EGDK_BIN_PATH=
+C:\Platform\build\bin\Release\Sfx.exe C:\AtmosphericScatteringTesting\AtmosphericScatteringTesting\AtmosphericScatteringTesting\Shaders\atmospheric_scattering.sfx -I"C:/Platform/DirectX12/Sfx" -I"C:/Platform/Shaders/SL" -O"C:\AtmosphericScatteringTesting\AtmosphericScatteringTesting\x64\Release\shaderbin\DirectX12" -P"C:/Platform/DirectX12/Sfx/DirectX12.json" -M"C:/Platform/build/DirectX12/sfx_intermediate" -w -EPLATFORM=C:/Platform -ESIMUL_XDK_VERSION= -EGDK_BIN_PATH=
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -193,8 +194,9 @@ endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
 exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
-      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Single Scattering Shader</Message>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\AtmosphericScatteringTesting\AtmosphericScatteringTesting\x64\Release\shaderbin\DirectX12\atmospheric_single_scattering.sfxo;%(Outputs)</Outputs>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Scattering Shader</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\AtmosphericScatteringTesting\AtmosphericScatteringTesting\x64\Release\shaderbin\DirectX12\atmospheric_scattering.sfxo;%(Outputs)</Outputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">atmospheric_testing.sl</AdditionalInputs>
     </CustomBuild>
     <None Include="Shaders\atmospheric_testing.sl" />
     <None Include="Shaders\atmospheric_transmittance_constants.sl" />
