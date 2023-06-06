@@ -281,8 +281,6 @@ public:
 		sceneConstants.LinkToEffect(effect, "SolidConstants");
 		cameraConstants.RestoreDeviceObjects(renderPlatform);
 
-		
-
 		atmosphereConstants.RestoreDeviceObjects(renderPlatform);	
 
 #ifdef SAMPLE_USE_D3D12
@@ -382,36 +380,6 @@ public:
 		switch (testType)
 		{
 		default:
-		case TestType::CLEAR_COLOUR:
-		{
-			Test_ClearColour(deviceContext);
-			break;
-		}
-		case TestType::QUAD_COLOUR:
-		{
-			Test_QuadColour(deviceContext, w, h);
-			break;
-		}
-		case TestType::TEXT:
-		{
-			Test_Text(deviceContext, w, h);
-			break;
-		}
-		case TestType::CHECKERBOARD:
-		{
-			Test_Checkerboard(deviceContext, w, h);
-			break;
-		}
-		case TestType::FIBONACCI:
-		{
-			Test_Fibonacci(deviceContext);
-			break;
-		}
-		case TestType::TVTESTCARD:
-		{
-			Test_TVTestCard(deviceContext, w, h);
-			break;
-		}
 		case TestType::EXTERNAL:
 		{
 			Test_External(deviceContext, w, h);
@@ -425,142 +393,142 @@ public:
 		framenumber++;
 	}
 
-	void Test_ClearColour(crossplatform::GraphicsDeviceContext& deviceContext)
-	{
-		hdrFramebuffer->Clear(deviceContext, 0.00f, 0.31f, 0.57f, 1.00f, reverseDepth ? 0.0f : 1.0f);
-	}
-
-	void Test_QuadColour(crossplatform::GraphicsDeviceContext& deviceContext, int w, int h)
-	{
-		hdrFramebuffer->Clear(deviceContext, 0.00f, 0.31f, 0.57f, 1.00f, reverseDepth ? 0.0f : 1.0f);
-		renderPlatform->GetDebugConstantBuffer().multiplier = vec4(0.0f, 0.33f, 1.0f, 1.0f);
-		renderPlatform->SetConstantBuffer(deviceContext, &(renderPlatform->GetDebugConstantBuffer()));
-		renderPlatform->DrawQuad(deviceContext, w / 4, h / 4, w / 2, h / 2, renderPlatform->GetDebugEffect(), renderPlatform->GetDebugEffect()->GetTechniqueByName("untextured"), "noblend");
-	}
-
-	void Test_Text(crossplatform::GraphicsDeviceContext& deviceContext, int w, int h)
-	{
-		int x = w / 4;
-		int y = h / 4;
-
-		std::string api = std::string("API: ") + renderPlatform->GetName();
-		std::string message;
-
-		message = "It's a trap!";
-	
-		renderPlatform->Print(deviceContext, x, y, api.c_str()); y += 16;
-		renderPlatform->Print(deviceContext, x, y, message.c_str()); y += 16;
-	}
-
-	void Test_Checkerboard(crossplatform::GraphicsDeviceContext& deviceContext, int w, int h)
-	{
-		crossplatform::Effect* test = renderPlatform->CreateEffect("Test");
-		crossplatform::EffectTechnique* checkerboard = test->GetTechniqueByName("test_checkerboard");
-		crossplatform::ShaderResource res = test->GetShaderResource("rwImage");
-
-		crossplatform::Texture* texture = renderPlatform->CreateTexture();
-		texture->ensureTexture2DSizeAndFormat(renderPlatform, 512, 512, 1, crossplatform::PixelFormat::RGBA_8_UNORM, true);
-
-		renderPlatform->ApplyPass(deviceContext, checkerboard->GetPass(0));
-		renderPlatform->SetUnorderedAccessView(deviceContext, res, texture);
-		renderPlatform->DispatchCompute(deviceContext, texture->width / 32, texture->length / 32, 1);
-		renderPlatform->SetUnorderedAccessView(deviceContext, res, nullptr);
-		renderPlatform->UnapplyPass(deviceContext);
-
-		hdrFramebuffer->Clear(deviceContext, 0.5f, 0.5f, 0.5f, 1.00f, reverseDepth ? 0.0f : 1.0f);
-		renderPlatform->DrawTexture(deviceContext, (w - h) / 2, 0, h, h, texture);
-	}
-
-	void Test_Fibonacci(crossplatform::GraphicsDeviceContext deviceContext)
-	{
-		static bool first = true;
-		if (first)
-		{
-			rwSB.RestoreDeviceObjects(renderPlatform, 32, true, true);
-			first = false;
-		}
-
-		crossplatform::Effect* test = renderPlatform->CreateEffect("Test");
-		crossplatform::EffectTechnique* fibonacci = test->GetTechniqueByName("test_fibonacci");
-		crossplatform::ShaderResource res = test->GetShaderResource("rwSB");
-
-		rwSB.ApplyAsUnorderedAccessView(deviceContext, test, res);
-		renderPlatform->ApplyPass(deviceContext, fibonacci->GetPass(0));
-		renderPlatform->DispatchCompute(deviceContext, 1, 1, 1);
-		renderPlatform->UnapplyPass(deviceContext);
-		rwSB.CopyToReadBuffer(deviceContext);
-
-		//First buffer won't be ready as it a ring of buffers
-		if (deviceContext.frame_number < 3)
-			return;
-
-		bool pass = true;
-		const uint* ptr = rwSB.OpenReadBuffer(deviceContext);
-		if (!ptr)
-		{
-			pass = false;
-		}
-		if (ptr[0] != 1 && ptr[1] != 1)
-		{
-			pass = false;
-		}
-		for (int i = 2; i < rwSB.count; i++)
-		{
-			uint a = ptr[i - 2];
-			uint b = ptr[i - 1];
-
-			if (ptr[i] != (a + b))
-			{
-				pass = false;
-				break;
-			}
-		}
-
-		rwSB.CloseReadBuffer(deviceContext);
-		vec4 colour = pass ? vec4(0, 1, 0, 1) : vec4(1, 0, 0, 1);
-		hdrFramebuffer->Clear(deviceContext, colour.x, colour.y, colour.z, colour.w, reverseDepth ? 0.0f : 1.0f);
-	}
-
-	void Test_TVTestCard(crossplatform::GraphicsDeviceContext deviceContext, int w, int h)
-	{
-		vec4 colours[8] = {
-			vec4(1,0,0,1),
-			vec4(0,1,0,1),
-			vec4(0,0,1,1),
-			vec4(0,1,1,1),
-			vec4(1,0,1,1),
-			vec4(1,1,0,1),
-			vec4(1,1,1,1),
-			vec4(0,0,0,0)
-		};
-		roSB.RestoreDeviceObjects(renderPlatform, _countof(colours), false, true, colours);
-		vec4* ptr = roSB.GetBuffer(deviceContext);
-		if (ptr)
-			memcpy(ptr, colours, sizeof(colours));
-		else
-			return;
-
-		crossplatform::Texture* texture = renderPlatform->CreateTexture();
-		texture->ensureTexture2DSizeAndFormat(renderPlatform, w, h, 1, crossplatform::PixelFormat::RGBA_8_UNORM, true);
-
-		crossplatform::Effect* test = renderPlatform->CreateEffect("Test");
-		crossplatform::EffectTechnique* tvtestcard = test->GetTechniqueByName("test_tvtestcard");
-		crossplatform::ShaderResource res_roSB = test->GetShaderResource("roSB");
-		crossplatform::ShaderResource res_rwImage = test->GetShaderResource("rwImage");
-
-		renderPlatform->ApplyPass(deviceContext, tvtestcard->GetPass(0));
-		roSB.Apply(deviceContext, test, res_roSB);
-		renderPlatform->SetUnorderedAccessView(deviceContext, res_rwImage, texture);
-		renderPlatform->DispatchCompute(deviceContext, texture->width / 32, texture->length / 32, 1);
-		renderPlatform->UnapplyPass(deviceContext);
-
-		hdrFramebuffer->Clear(deviceContext, 1.0f, 0.0f, 0.0f, 1.0f, reverseDepth ? 0.0f : 1.0f);
-		renderPlatform->DrawTexture(deviceContext, 0, 0, w, h, texture);
-	}
 
 	void Test_External(crossplatform::GraphicsDeviceContext deviceContext, int w, int h)
 	{
 		hdrFramebuffer->Clear(deviceContext, 0.00f, 0.31f, 0.57f, 1.00f, reverseDepth ? 0.0f : 1.0f);
+
+		if (!texturesGenerated)
+		{
+			transmittanceTexture = renderPlatform->CreateTexture();
+			directIrradianceTexture = renderPlatform->CreateTexture();
+			singleScatteringTexture = renderPlatform->CreateTexture();
+			multipleScatteringTexture = renderPlatform->CreateTexture();
+			scatteringDensityTexture = renderPlatform->CreateTexture();
+			transmittanceTexture->ensureTexture2DSizeAndFormat(renderPlatform, 256, 256, 1, crossplatform::PixelFormat::RGBA_32_FLOAT, false, true, false, 1, 0, false, vec4(0.0, 0.0, 0.0, 0.0));
+			directIrradianceTexture->ensureTexture2DSizeAndFormat(renderPlatform, 256, 256, 1, crossplatform::PixelFormat::RGBA_32_FLOAT, false, true, false, 1, 0, false, vec4(0.0, 0.0, 0.0, 0.0));
+			singleScatteringTexture->ensureTexture3DSizeAndFormat(renderPlatform, 256, 128, 32, crossplatform::PixelFormat::RGBA_32_FLOAT, true, 1, false);
+			renderPlatform->ClearTexture(deviceContext, singleScatteringTexture, vec4(1.0, 0.0, 1.0, 0.0));
+			multipleScatteringTexture->ensureTexture3DSizeAndFormat(renderPlatform, 256, 128, 32, crossplatform::PixelFormat::RGBA_32_FLOAT, true, 1, false);
+			renderPlatform->ClearTexture(deviceContext, multipleScatteringTexture, vec4(0.0, 0.0, 0.0, 0.0));
+			scatteringDensityTexture->ensureTexture3DSizeAndFormat(renderPlatform, 256, 128, 32, crossplatform::PixelFormat::RGBA_32_FLOAT, true, 1, false);
+			renderPlatform->ClearTexture(deviceContext, scatteringDensityTexture, vec4(0.0, 0.0, 0.0, 0.0));
+
+			//crossplatform::Effect* transmittance = renderPlatform->CreateEffect("atmospheric_transmittance");
+			crossplatform::EffectTechnique* precompute_transmittance = transmittanceEffect->GetTechniqueByName("precompute_transmittance");
+			crossplatform::EffectTechnique* precompute_direct_irradiance = scatteringEffect->GetTechniqueByName("precompute_direct_irradiance");
+			crossplatform::EffectTechnique* precompute_single_scattering = scatteringEffect->GetTechniqueByName("precompute_single_scattering");
+			crossplatform::EffectTechnique* precompute_scattering_density_texture = scatteringEffect->GetTechniqueByName("precompute_scattering_density_texture");
+			crossplatform::EffectTechnique* precompute_multiple_scattering_texture = scatteringEffect->GetTechniqueByName("precompute_multiple_scattering_texture");
+
+			atmosphereConstants.LinkToEffect(transmittanceEffect, "cbAtmosphere");
+			atmosphereConstants.LinkToEffect(scatteringEffect, "cbAtmosphere");
+
+			atmosphereConstants.g_topRadius = 6420000.0;
+			atmosphereConstants.g_bottomRadius = 6360000.0;
+			atmosphereConstants.g_mu_s_min = -0.2;
+
+			atmosphereConstants.g_rayleighExpTerm = 1.f;
+			atmosphereConstants.g_rayleighExpScale = -1.f / 8000.f;
+			atmosphereConstants.g_rayleighLinearTerm = 0.f;
+			atmosphereConstants.g_rayleighConstantTerm = 0.f;
+
+			atmosphereConstants.g_rayleighScattering = vec3(rayleigh_approx(630), rayleigh_approx(550), rayleigh_approx(440)) * 0.001f;
+			atmosphereConstants.g_rayleighDensity;
+
+			atmosphereConstants.g_mieExpTerm = 1.f;
+			atmosphereConstants.g_mieExpScale = -1.f / 1200.f;
+			atmosphereConstants.g_mieLinearTerm = 0.f;
+			atmosphereConstants.g_mieConstantTerm = 0.f;
+
+			double haze = 1.f;
+			double nu = 4.0;
+			double T = (1.0 + haze);
+			double c = (0.6544 * T - 0.6510) * 1e-16;
+			if (haze > 1.0f)
+				c /= haze;
+			if (c < 0.0)
+				c = 0.0;
+			vec3 Mie;
+			Mie.x = (float)(0.434 * c * SIMUL_PI_D * pow(2.0 * SIMUL_PI_D / (680.f * 1e-9), nu - 2) * 0.68455);
+			Mie.y = (float)(0.434 * c * SIMUL_PI_D * pow(2.0 * SIMUL_PI_D / (550.f * 1e-9), nu - 2) * 0.673323);
+			Mie.z = (float)(0.434 * c * SIMUL_PI_D * pow(2.0 * SIMUL_PI_D / (440.f * 1e-9), nu - 2) * 0.6691485);
+
+			atmosphereConstants.g_mieScattering = vec3(mie_approx(630), mie_approx(550), mie_approx(440));
+			atmosphereConstants.g_miePhaseFunction = 0.8f;
+
+			atmosphereConstants.g_mieExtinction = Mie * 0.001f;
+
+			atmosphereConstants.g_absorptionExpTerm = 0.f;
+			atmosphereConstants.g_absorptionExpScale = 0.f;
+			atmosphereConstants.g_absorptionLinearTerm = 1.f / 15000.f;
+			atmosphereConstants.g_absorptionConstantTerm = -2.f / 3.f;
+
+			//atmosphereConstants.g_absorptionExtinction = (300.0 * 2.687e20 / 15000.0) * vec3(1.582000e-26, 3.500000e-25, 1.209000e-25);
+
+			atmosphereConstants.g_solarIrradiance = 1.5;
+			atmosphereConstants.g_groundAlbedo = 0.1;
+			atmosphereConstants.g_scatteringOrder = 2;
+
+			atmosphereConstants.g_mu_s = mu_s;
+			atmosphereConstants.g_height = height;
+
+			effect->SetConstantBuffer(deviceContext, &atmosphereConstants);
+
+			transmittanceEffect->Apply(deviceContext, precompute_transmittance, 0);
+
+			transmittanceTexture->activateRenderTarget(deviceContext);
+			renderPlatform->DrawQuad(deviceContext);
+			transmittanceTexture->deactivateRenderTarget(deviceContext);
+
+			transmittanceEffect->Unapply(deviceContext);
+
+			scatteringEffect->Apply(deviceContext, precompute_direct_irradiance, 0);
+			scatteringEffect->SetTexture(deviceContext, "g_Transmittance", transmittanceTexture);
+			directIrradianceTexture->activateRenderTarget(deviceContext);
+			renderPlatform->DrawQuad(deviceContext);
+			directIrradianceTexture->deactivateRenderTarget(deviceContext);
+
+			scatteringEffect->Unapply(deviceContext);
+
+			scatteringEffect->Apply(deviceContext, precompute_single_scattering, 0);
+			scatteringEffect->SetUnorderedAccessView(deviceContext, "singleScatteringOutput", singleScatteringTexture);
+			scatteringEffect->SetTexture(deviceContext, "g_Transmittance", transmittanceTexture);
+			renderPlatform->DispatchCompute(deviceContext, 256, 128, 32);
+			scatteringEffect->Unapply(deviceContext);
+			scatteringEffect->UnbindTextures(deviceContext);
+
+			scatteringEffect->Apply(deviceContext, precompute_scattering_density_texture, 0);
+			scatteringEffect->SetUnorderedAccessView(deviceContext, "scatteringDensityOutput", scatteringDensityTexture);
+			scatteringEffect->SetTexture(deviceContext, "g_Transmittance", transmittanceTexture);
+			scatteringEffect->SetTexture(deviceContext, "g_DirectIrradiance", directIrradianceTexture);
+			scatteringEffect->SetTexture(deviceContext, "g_singleScattering", singleScatteringTexture);
+			scatteringEffect->SetTexture(deviceContext, "g_multipleScattering", multipleScatteringTexture);
+			renderPlatform->DispatchCompute(deviceContext, 256, 128, 32);
+			scatteringEffect->Unapply(deviceContext);
+			scatteringEffect->UnbindTextures(deviceContext);
+
+			scatteringEffect->Apply(deviceContext, precompute_multiple_scattering_texture, 0);
+			scatteringEffect->SetUnorderedAccessView(deviceContext, "multipleScatteringOutput", multipleScatteringTexture);
+			scatteringEffect->SetTexture(deviceContext, "g_Transmittance", transmittanceTexture);
+			scatteringEffect->SetTexture(deviceContext, "g_singleScattering", singleScatteringTexture);
+			scatteringEffect->SetTexture(deviceContext, "g_scatteringDensityTexture", scatteringDensityTexture);
+			renderPlatform->DispatchCompute(deviceContext, 256, 128, 32);
+			scatteringEffect->Unapply(deviceContext);
+			scatteringEffect->UnbindTextures(deviceContext);
+
+			texturesGenerated = true;
+		}
+		if (mu_s > 1.0)
+			mu_s = 1.0;
+		if (mu_s < 0.0)
+			mu_s = 0.0;
+
+
+		atmosphereConstants.g_height = height;
+		atmosphereConstants.g_mu_s = mu_s;
+		
+		effect->SetConstantBuffer(deviceContext, &atmosphereConstants);		/*
 
 		if (!texturesGenerated)
 		{
